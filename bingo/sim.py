@@ -47,18 +47,36 @@ def run_simulation(n: int = 30):
     try:
         for i in range(n):
             lg.info(f"Running simulation {i + 1}/{n}")
-            game_data = simulate_game(
-                num_boards=250,
-                number_pool_size=200,
-                board_size=6,
-                winning_number_size=60,
-            )
-            sqdb.insert_game_data(game_data)
+            for number_pool_size in range(60, 150 + 1, 10):
+                for num_board in [200, 250, 300, 350, 400]:
+                    for winning_size in range(30, 90 + 1, 5):
+                        lg.info(f"Running with winning_number_size={winning_size}")
+                        if number_pool_size < winning_size:
+                            lg.warning(
+                                f"Skipping simulation: {number_pool_size=} < {winning_size=}"
+                            )
+                            continue
+                        game_data = simulate_game(
+                            num_boards=num_board,
+                            number_pool_size=number_pool_size,
+                            board_size=7,
+                            winning_number_size=winning_size,
+                        )
+                        sqdb.insert_game_data(game_data)
+            # game_data = simulate_game(
+            #     num_boards=250,
+            #     number_pool_size=120,
+            #     board_size=7,
+            #     winning_number_size=60,
+            # )
+            # sqdb.insert_game_data(game_data)
 
         # Optionally, fetch and print all data from the DB after simulations
         lg.info("\n--- All simulation results from database ---")
         cursor = sqdb.connection.cursor()
-        cursor.execute(f"SELECT * FROM simulations ORDER BY timestamp_entry DESC LIMIT {n}")
+        cursor.execute(
+            f"SELECT * FROM simulations ORDER BY timestamp_entry DESC LIMIT {n}"
+        )
         rows = cursor.fetchall()
         if rows:
             # Get column names for better DataFrame representation
@@ -75,4 +93,4 @@ def run_simulation(n: int = 30):
 
 
 if __name__ == "__main__":
-    run_simulation(n=5)
+    run_simulation()
