@@ -1,25 +1,12 @@
-import dataclasses
 import pandas as pd
 
-try:
-    from bingo import APP_NAME
-    from bingo.game import BingoGame
-    from bingo.custom_logger import getLogger
-except ImportError:
-    print("ERROR: are you running using python -m bingo.{XXX}?")
-    raise
-
+from bingo import APP_NAME
+from bingo.custom_logger import getLogger
+from bingo.game import BingoGame
+from bingo.models import GameData
+from bingo.database import SQLiteDatabase
 
 lg = getLogger(APP_NAME)
-
-
-@dataclasses.dataclass
-class GameData:
-    board_size: int
-    number_pool_size: int
-    num_boards: int
-    winning_number_size: int
-    winning_boards_count: int
 
 
 def simulate_game(
@@ -27,7 +14,7 @@ def simulate_game(
     number_pool_size: int = 88,
     board_size: int = 6,
     winning_number_size: int = 50,
-) -> None:
+) -> GameData:  # Changed return type hint to GameData
     """
     Main function to demonstrate the Bingo game.
     """
@@ -49,32 +36,43 @@ def simulate_game(
         winning_number_size=winning_number_size,
         winning_boards_count=winning_count,
     )
-    # board.print_board()
-
-    # # Validate the board against the drawn winning numbers
-    # is_winner = game.validate_board(board, print_marked_board=True)
-    # print(f"\nIs the board a winner? {is_winner}")
 
 
-def run_simulation(n: int = 20):
+def run_simulation(n: int = 30):
     """
-    Run the simulation and print the results.
+    Run the simulation and save the results to a SQLite database.
     """
-    datalist = []
-    for i in range(n):
-        lg.info(f"Running simulation {i + 1}/{n}")
-        datalist.append(
-            simulate_game(
+    sqdb = SQLiteDatabase()
+
+    try:
+        for i in range(n):
+            lg.info(f"Running simulation {i + 1}/{n}")
+            game_data = simulate_game(
                 num_boards=250,
                 number_pool_size=200,
                 board_size=6,
                 winning_number_size=60,
             )
-        )
+            sqdb.insert_game_data(game_data)
 
-    df = pd.DataFrame(datalist)
-    print(df)
+        # Optionally, fetch and print all data from the DB after simulations
+        lg.info("\n--- All simulation results from database ---")
+        cursor = sqdb.connection.cursor()
+        cursor.execute(f"SELECT * FROM simulations ORDER BY timestamp_entry DESC LIMIT {n}")
+        rows = cursor.fetchall()
+        if rows:
+            # Get column names for better DataFrame representation
+            col_names = [description[0] for description in cursor.description]
+            df = pd.DataFrame(rows, columns=col_names)
+            print(df)
+        else:
+            lg.info("No simulation data found in the database.")
+
+    finally:
+        if sqdb.connection:
+            sqdb.connection.close()
+            lg.info("Database connection closed.")
 
 
 if __name__ == "__main__":
-    run_simulation()
+    run_simulation(n=5)
