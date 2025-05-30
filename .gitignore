@@ -3,7 +3,8 @@
 
 
 logs/
-
+output_data/
+askgemini.md
 
 ### Linux ###
 *~
