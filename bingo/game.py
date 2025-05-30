@@ -1,25 +1,11 @@
 import random
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-try:
-    from bingo import APP_NAME
-    from bingo.custom_logger import getLogger
-except ImportError:
-    # Mocking for standalone execution
-    APP_NAME = "BingoApp"
-
-    class MockLogger:
-        def info(self, message):
-            print(f"INFO: {message}")
-
-    def getLogger(name):
-        return MockLogger()
-
-
-random.seed(42)  # For reproducibility
+from bingo import APP_NAME
+from bingo.custom_logger import getLogger
 
 lg = getLogger(APP_NAME)
 
@@ -31,10 +17,10 @@ class BingoBoard:
 
     size: int
     matrix: dict[str, dict[str, int]]
-    matrix: dict[str, dict[str, int]]
     number_pool: list[int]
 
     is_winner: bool = False
+    is_validated: bool = False
 
     df: Optional[pd.DataFrame] = None
     json_str: Optional[str] = None
@@ -42,14 +28,7 @@ class BingoBoard:
     json_str_marked: Optional[str] = None
 
     def __init__(self, size=7, number_pool_size: int = 200):
-        """
-        Initializes a BingoBoard.
-
-        Args:
-            size (int): The dimension of the square board (e.g., 5 for a 5x5 board).
-            number_pool_size (int): The maximum number in the pool from which
-                                    board numbers are drawn.
-        """
+        """Initializes a BingoBoard instance."""
         self.size = size
         self.number_pool = list(range(1, number_pool_size + 1))
         # Ensure enough numbers are available for the board
@@ -61,18 +40,7 @@ class BingoBoard:
         self.matrix = self.create_board_matrix(self.size)
 
     def create_board_matrix(self, size) -> dict:
-        """
-        Creates the square matrix for the Bingo board by sampling unique numbers
-        from the number pool.
-
-        Args:
-            size (int): The dimension of the square board.
-
-        Returns:
-            dict: A dictionary representation of the board matrix,
-                  e.g., {row_idx: {col_idx: number}}.
-        """
-        # Sample unique numbers for the board
+        """Creates a square matrix for the Bingo board with unique random numbers."""
         array_1d = np.array(random.sample(self.number_pool, size**2))
         array_2d = array_1d.reshape((size, size))
         output_board = {}
@@ -158,7 +126,7 @@ class BingoGame:
 
     def validate_board(
         self, board: BingoBoard, print_marked_board: bool = False
-    ) -> Tuple[BingoBoard, bool]:
+    ) -> BingoBoard:
         """
         Validates if the given BingoBoard has a winning line (row, column, or diagonal)
         based on the game's winning numbers, using pandas functions.
@@ -173,7 +141,8 @@ class BingoGame:
             lg.warning(
                 "No winning numbers have been generated yet. Board cannot be validated."
             )
-            return False
+            board.is_winner = False
+            return board
 
         # Convert winning numbers to a set for efficient lookups
         winning_set = set(self.winning_numbers)
@@ -192,22 +161,25 @@ class BingoGame:
         # Check rows: if any row is all True
         if df_marked.all(axis=1).any():
             winning_row_idx = df_marked.all(axis=1).idxmax()
-            lg.info(f"Winning row found: {df_board.loc[winning_row_idx].tolist()}")
-            return True
+            lg.debug(f"Winning row found: {df_board.loc[winning_row_idx].tolist()}")
+            board.is_winner = True
+            return board
 
         # Check columns: if any column is all True
         if df_marked.all(axis=0).any():
             winning_col_idx = df_marked.all(axis=0).idxmax()
-            lg.info(f"Winning column found: {df_board[winning_col_idx].tolist()}")
-            return True
+            lg.debug(f"Winning column found: {df_board[winning_col_idx].tolist()}")
+            board.is_winner = True
+            return board
 
         # Check main diagonal (top-left to bottom-right)
         # Extract the main diagonal as a pandas Series and check if all are True
         main_diag_marked = pd.Series([df_marked.iloc[i, i] for i in range(board.size)])
         if main_diag_marked.all():
             main_diag_numbers = [int(df_board.iloc[i, i]) for i in range(board.size)]
-            lg.info(f"Winning main diagonal found: {main_diag_numbers}")
-            return True
+            lg.debug(f"Winning main diagonal found: {main_diag_numbers}")
+            board.is_winner = True
+            return board
 
         # Check anti-diagonal (top-right to bottom-left)
         # Extract the anti-diagonal as a pandas Series and check if all are True
@@ -218,12 +190,18 @@ class BingoGame:
             anti_diag_numbers = [
                 int(df_board.iloc[i, board.size - 1 - i]) for i in range(board.size)
             ]
-            lg.info(f"Winning anti-diagonal found: {anti_diag_numbers}")
-            return True
+            lg.debug(f"Winning anti-diagonal found: {anti_diag_numbers}")
+            board.is_winner = True
+            return board
 
         # If no winning line is found
-        lg.info("No winning line found on the board.")
-        return False
+        lg.debug("No winning line found on the board.")
+        board.is_winner = False
+        return board
+
+    def count_winning_boards(self, boards: list[BingoBoard]) -> int:
+        """Counts the number of winning boards in a list of BingoBoard instances."""
+        return sum(1 for board in boards if self.validate_board(board).is_winner)
 
 
 def demo_gauranteed_win():
@@ -249,29 +227,3 @@ def demo_gauranteed_win():
     # Validate the board against the winning numbers
     is_guaranteed_winner = guaranteed_win_game.validate_board(guaranteed_board)
     lg.info(f"Is the guaranteed board a winner? {is_guaranteed_winner}")
-
-
-def main():
-    """
-    Main function to demonstrate the Bingo game.
-    """
-    lg.info("Starting Bingo Game demonstration.")
-    game = BingoGame(size=5, number_pool_size=75)  # Common Bingo size and pool
-    board = game.generate_board()
-    board.print_board()
-    # print(f"{board.to_json()}")
-
-    # Generate a set of winning numbers. Adjust count to test winning/losing scenarios.
-    # For testing a win, you might want a higher count or specifically craft numbers.
-    game.generate_winning_numbers(count=50)  # Example: draw 20 numbers
-    print(f"\nWinning numbers drawn: {game.winning_numbers}")
-
-    # # Validate the board against the drawn winning numbers
-    is_winner = game.validate_board(board, print_marked_board=True)
-    print(f"\nIs the board a winner? {is_winner}")
-
-    # demo_gauranteed_win()
-
-
-if __name__ == "__main__":
-    main()
